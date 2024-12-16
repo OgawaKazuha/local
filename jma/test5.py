@@ -2,166 +2,115 @@ import json
 import flet as ft
 import requests
 
-URL= 'https://www.jma.go.jp/bosai/common/const/area.json'
-data_json = requests.get(URL).json() 
-
-def get_prefectures(region_code):
-    prefectures = []
-    for office in data_json["offices"].values():
-        if office["parent"] == region_code:
-            prefectures.append(office["name"])
-    return prefectures
-
-def create_rail_destinations():
-    destinations = []
-    for region_code, region in data_json["centers"].items():
-        prefectures = get_prefectures(region_code)
-        destinations.append(
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label=region["name"],
-                trailing=ft.DropdownButton(
-                    options=[ft.dropdown.Option(pref) for pref in prefectures],
-                    on_change=on_prefecture_change,
-                ),
-            )
-        )
-    return destinations
-
-def on_prefecture_change(e):
-    selected_prefecture = e.control.value
-    print(f"Selected prefecture: {selected_prefecture}")
-    # ここで、選択された都道府県に対応する天気情報を取得し、UIを更新する処理を追加できます
-
+URL = 'https://www.jma.go.jp/bosai/common/const/area.json'
 
 def main(page: ft.Page):
-
     page.title = "天気予報"
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
-    
-    def on_area_selected(e):
-        selected_area_code = e.control.data
-        # 選択された地域の天気情報を取得し、UIを更新する処理を追加する
-        print(f"Selected area: {selected_area_code}")
+
+    # 地方と県の辞書を作成
+    areas = {
+        "北海道地方": ["空知地域", "後志地域", "石狩地域", "渡島地域", "檜山地域", "上川地域", "留萌地域", "宗谷地域", "オホーツク地域", "胆振地域", "日高地域", "十勝地域", "釧路地域", "根室地域", "千島列島"],
+        "東北地方": ["青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県"],
+        "関東甲信越地方": ["茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県", "山梨県", "長野県"],
+        "東海地方": ["新潟県", "富山県", "石川県", "福井県", "静岡県", "愛知県", "岐阜県", "三重県"],
+        "北陸地方": ["新潟県", "富山県", "石川県", "福井県"],
+        "近畿地方": ["滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県"],
+        "中国地方（山口県を除く）": ["鳥取県", "島根県", "岡山県", "広島県"],
+        "四国地方": ["徳島県", "香川県", "愛媛県", "高知県"],
+        "九州地方（山口県を含む）": ["山口県", "福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県"],
+        "沖縄地方": ["沖縄県"],
+    }
+
+    # Prefecture to code mapping (you may need to manually create this or get it from a reliable source)
+    prefecture_codes = {
+        "北海道": "016000",  # この値は正確な値に置き換えてください
+        "青森県": "020000",
+        "岩手県": "030000",
+        # 他の県のコードも追加
+    }
+
+    selected_area = None
+    selected_prefecture = None
+    weather_report = ft.Text(value="県を選択してください")
+
+    def on_destination_change(e):
+        nonlocal selected_area, selected_prefecture
+        selected_index = e.control.selected_index
+        selected_area = list(areas.keys())[selected_index]
+        selected_prefecture = None
+        update_prefectures()
+
+    def on_prefecture_click(e):
+        nonlocal selected_prefecture
+        selected_prefecture = e.control.content.data
+        fetch_weather_report()
+
+    def update_prefectures():
+        prefectures_column.controls.clear()
+        for prefecture in areas[selected_area]:
+            prefecture_button = ft.ElevatedButton(
+                content=ft.Text(prefecture, data=prefecture),
+                on_click=on_prefecture_click,
+            )
+            prefectures_column.controls.append(prefecture_button)
+        page.update()
+
+    def fetch_weather_report():
+        if selected_prefecture is None:
+            weather_report.value = "県を選択してください"
+        else:
+            # 県コードを取得
+            prefecture_code = prefecture_codes.get(selected_prefecture)
+            
+            if prefecture_code:
+                try:
+                    # 天気予報APIを使用
+                    weather_url = f"https://www.jma.go.jp/bosai/forecast/data/forecast/{prefecture_code}.json"
+                    response = requests.get(weather_url)
+                    
+                    if response.status_code == 200:
+                        weather_data = response.json()
+                        
+                        # 天気予報のテキストを抽出（この部分は気象庁のJSONの構造に依存）
+                        weather_text = weather_data[0]['timeSeries'][0]['areas'][0]['weathers'][0]
+                        weather_report.value = f"{selected_prefecture}の天気予報: {weather_text}"
+                    else:
+                        weather_report.value = f"エラー: {response.status_code}"
+                except Exception as e:
+                    weather_report.value = f"エラー: {str(e)}"
+            else:
+                weather_report.value = f"{selected_prefecture}の県コードが見つかりません"
+            
+            page.update()
 
     rail = ft.NavigationRail(
         selected_index=0,
         label_type=ft.NavigationRailLabelType.ALL,
-        # extended=True,
-        min_width=150,
-        min_extended_width=400,
-        leading=ft.Text("天気予報", size=30 ,width=150),  # Replace FloatingActionButton with Text
-        group_alignment=-0.9,
-        
-
-        # ボタンを作る
         destinations=[
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN, label="北海道地方",
-                trailing=ft.PopupMenuButton(
-                    items=[
-                        ft.PopupMenuItem(
-                            text=area["area_name"],
-                            data=area["area_code"],
-                            on_click=on_area_selected,
-                        )
-                        for area in get_child_areas("010100")
-                    ],
-                ),
-            ),
-       
-     
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN, label="東北地方",trailing=ft.PopupMenuButton(
-                    items=[
-                        ft.PopupMenuItem(
-                            text=area["area_name"],
-                            data=area["area_code"],
-                            on_click=on_area_selected,
-                        )
-                        for area in get_child_areas("010200")
-                    ],
-                ),
-            ),
-            
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="関東甲信越地方 010300"
-            ),
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="東海地方 010400"
-            ),
-
-            ft.NavigationRailDestination(   
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="北陸地方 010500"
-            ),
-
-            ft.NavigationRailDestination(  
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="近畿地方 010600"
-            ),
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="中国地方（山口県を除く） 010700"
-            ),
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="四国地方 010800"
-            ),
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="九州地方（山口県を含む） 010900"
-            ),
-
-            ft.NavigationRailDestination(
-                icon=ft.icons.ARROW_DROP_DOWN,
-                label="沖縄地方 011000"
-            ),
+            ft.NavigationRailDestination(icon=ft.icons.LOCATION_ON, label=area)
+            for area in areas.keys()
         ],
-
-        #ボタンをクリックする
-
-
-        on_change=lambda e: print("Selected destination:", e.control.selected_index)
+        on_change=on_destination_change,
     )
 
-    
+    prefectures_column = ft.Column()
 
-    def on_destination_change(e):
-        selected_index = e.control.selected_index
-        if selected_index == 0:  # 北海道地方
-        # JSONデータから北海道の天気情報を取得し、UIを更新する
-         pass
-        elif selected_index == 1:  # 東北地方
-        # JSONデータから東北の天気情報を取得し、UIを更新する
-            pass
-    # 他の地方についても同様に処理を追加する
-
-        rail = ft.NavigationRail(
-        selected_index=0,
-     # ... 残りのrailの設定 ...
-        on_change=on_destination_change
-        )
-
-
-      
     page.add(
         ft.Row(
             [
                 rail,
                 ft.VerticalDivider(width=1),
-                ft.Column( alignment=ft.MainAxisAlignment.START, expand=True),
+                ft.Column(
+                    [
+                        prefectures_column,
+                        weather_report,
+                    ],
+                    expand=True,
+                ),
             ],
             expand=True,
         )
-        # ft.ElevatedButton(text="北海道地方", on_click=button_clicked) 
-)
+    )
 
 ft.app(main)
